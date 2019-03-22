@@ -51,8 +51,8 @@ namespace Gurux.DLMS.Reader
     {
         int WaitTime = 5000;
         IGXMedia Media;
-        TraceLevel Trace;
-        GXDLMSClient Client;
+        internal TraceLevel Trace;
+        internal GXDLMSClient Client;
 
         /// <summary>
         /// Constructor.
@@ -403,7 +403,7 @@ namespace Gurux.DLMS.Reader
                 {
                     Console.WriteLine("-------- Reading " + it.GetType().Name + " " + it.Name + " " + it.Description);
                 }
-                foreach (int pos in (it as IGXDLMSBase).GetAttributeIndexToRead())
+                foreach (int pos in (it as IGXDLMSBase).GetAttributeIndexToRead(true))
                 {
                     try
                     {

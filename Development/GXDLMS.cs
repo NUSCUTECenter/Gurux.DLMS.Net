@@ -300,7 +300,7 @@ namespace Gurux.DLMS
                 settings.IncreaseBlockIndex();
                 if (settings.UseLogicalNameReferencing)
                 {
-                    GXDLMSLNParameters p = new GXDLMSLNParameters(null, settings, 0, cmd, (byte)GetCommandType.NextDataBlock, bb, null, 0xff);
+                    GXDLMSLNParameters p = new GXDLMSLNParameters(null, settings, 0, cmd, (byte)GetCommandType.NextDataBlock, bb, null, 0xff, Command.None);
                     reply = GXDLMS.GetLnMessages(p);
                 }
                 else
@@ -598,64 +598,75 @@ namespace Gurux.DLMS
             }
         }
 
+        static bool IsGloMessage(Command cmd)
+        {
+            return cmd == Command.GloGetRequest || cmd == Command.GloSetRequest || cmd == Command.GloMethodRequest;
+        }
+
         internal static byte[] Cipher0(GXDLMSLNParameters p, byte[] data)
         {
             byte cmd;
             byte[] key;
             GXICipher cipher = p.settings.Cipher;
-            byte[] st = cipher.SystemTitle;
-            if ((p.settings.ProposedConformance & Conformance.GeneralProtection) == 0
-                && (p.settings.NegotiatedConformance & Conformance.GeneralProtection) == 0)
+            //If client.
+            if (p.cipheredCommand == Command.None)
             {
-                if (cipher.DedicatedKey != null && (p.settings.Connected & ConnectionState.Dlms) != 0)
+                if ((p.settings.ProposedConformance & Conformance.GeneralProtection) == 0
+                    && (p.settings.NegotiatedConformance & Conformance.GeneralProtection) == 0)
                 {
-                    cmd = (byte)GetDedMessage(p.command);
-                    key = cipher.DedicatedKey;
+                    if (cipher.DedicatedKey != null && (p.settings.Connected & ConnectionState.Dlms) != 0)
+                    {
+                        cmd = (byte)GetDedMessage(p.command);
+                        key = cipher.DedicatedKey;
+                    }
+                    else
+                    {
+                        cmd = (byte)GetGloMessage(p.command);
+                        key = cipher.BlockCipherKey;
+                    }
                 }
                 else
                 {
-                    cmd = (byte)GetGloMessage(p.command);
-                    key = cipher.BlockCipherKey;
+                    if (p.settings.Cipher.DedicatedKey != null)
+                    {
+                        cmd = (byte)Command.GeneralDedCiphering;
+                        key = cipher.DedicatedKey;
+                    }
+                    else
+                    {
+                        cmd = (byte)Command.GeneralGloCiphering;
+                        key = cipher.BlockCipherKey;
+                    }
                 }
             }
-            else
+            else //If server.
             {
-                if (p.settings.Cipher.DedicatedKey != null)
+                if (p.cipheredCommand == Command.GeneralDedCiphering)
                 {
                     cmd = (byte)Command.GeneralDedCiphering;
                     key = cipher.DedicatedKey;
                 }
-                else
+                else if (p.cipheredCommand == Command.GeneralGloCiphering)
                 {
                     cmd = (byte)Command.GeneralGloCiphering;
                     key = cipher.BlockCipherKey;
+                }
+                else if (IsGloMessage(p.cipheredCommand))
+                {
+                    cmd = (byte)GetGloMessage(p.command);
+                    key = cipher.BlockCipherKey;
+                }
+                else
+                {
+                    cmd = (byte)GetDedMessage(p.command);
+                    key = cipher.DedicatedKey;
                 }
             }
             AesGcmParameter s = new AesGcmParameter(cmd, cipher.Security,
                 ++cipher.InvocationCounter, cipher.SystemTitle, key,
                 cipher.AuthenticationKey);
+            s.IgnoreSystemTitle = p.settings.Standard == Standard.Italy;
             byte[] tmp = GXCiphering.Encrypt(s, data);
-            if (p.command == Command.DataNotification || cmd == (byte)Command.GeneralGloCiphering ||
-                cmd == (byte)Command.GeneralDedCiphering)
-            {
-                GXByteBuffer reply = new GXByteBuffer();
-                // Add command.
-                reply.SetUInt8(tmp[0]);
-                // Add system title.
-                if (st != null && p.settings.Standard != Standard.Italy)
-                {
-                    GXCommon.SetObjectCount(st.Length, reply);
-                    reply.Set(st);
-                }
-                else
-                {
-                    //System title is not send on Pre-Established connections.
-                    reply.SetUInt8(0);
-                }
-                // Add data.
-                reply.Set(tmp, 1, tmp.Length - 1);
-                return reply.Array();
-            }
             return tmp;
         }
 
@@ -666,7 +677,8 @@ namespace Gurux.DLMS
         /// <param name="reply">Generated message.</param>
         internal static void GetLNPdu(GXDLMSLNParameters p, GXByteBuffer reply)
         {
-            bool ciphering = p.command != Command.Aarq && p.command != Command.Aare && p.settings.Cipher != null && p.settings.Cipher.Security != Gurux.DLMS.Enums.Security.None;
+            bool ciphering = p.command != Command.Aarq && p.command != Command.Aare && p.settings.Cipher != null &&
+                (p.settings.Cipher.Security != Gurux.DLMS.Enums.Security.None || p.cipheredCommand != Command.None);
             int len = 0;
             if (p.command == Command.Aarq)
             {
@@ -981,11 +993,7 @@ namespace Gurux.DLMS
             GXByteBuffer reply = new GXByteBuffer();
             List<byte[]> messages = new List<byte[]>();
             byte frame = 0;
-            if (p.command == Command.Aarq)
-            {
-                frame = 0x10;
-            }
-            else if (p.command == Command.DataNotification || p.command == Command.EventNotification)
+            if (p.command == Command.DataNotification || p.command == Command.EventNotification)
             {
                 frame = 0x13;
             }
@@ -1043,11 +1051,7 @@ namespace Gurux.DLMS
             GXByteBuffer reply = new GXByteBuffer();
             List<byte[]> messages = new List<byte[]>();
             byte frame = 0x0;
-            if (p.command == Command.Aarq)
-            {
-                frame = 0x10;
-            }
-            else if (p.command == Command.InformationReport)
+            if (p.command == Command.InformationReport)
             {
                 frame = 0x13;
             }
@@ -1528,10 +1532,12 @@ namespace Gurux.DLMS
         /// <param name="reply">Received data.</param>
         /// <param name="target">target (primary) address</param>
         /// <param name="source">Source (secondary) address.</param>
-        internal static void GetHdlcAddressInfo(GXByteBuffer reply, out int target, out int source)
+        /// <param name="type">DLMS frame type.</param>
+        internal static void GetHdlcAddressInfo(GXByteBuffer reply, out int target, out int source, out byte type)
         {
             int position = reply.Position;
             target = source = 0;
+            type = 0;
             try
             {
                 short ch;
@@ -1582,6 +1588,7 @@ namespace Gurux.DLMS
                 //Get address.
                 target = GXCommon.GetHDLCAddress(reply);
                 source = GXCommon.GetHDLCAddress(reply);
+                type = reply.GetUInt8();
             }
             finally
             {
@@ -2294,7 +2301,7 @@ namespace Gurux.DLMS
                     }
                     return false;
                 }
-                // Get status code. Status code is begin of each PDU. 
+                // Get status code. Status code is begin of each PDU.
                 if (first)
                 {
                     type = (SingleReadResponse)reply.Data.GetUInt8();
@@ -3073,28 +3080,33 @@ namespace Gurux.DLMS
                     --data.Data.Position;
                     AesGcmParameter p;
                     GXICipher cipher = settings.Cipher;
-                    if (cipher.DedicatedKey != null && (settings.Connected & ConnectionState.Dlms) != 0)
+                    if (data.Command == Command.GeneralDedCiphering)
                     {
                         p = new AesGcmParameter(settings.SourceSystemTitle,
                                 cipher.DedicatedKey,
                                 cipher.AuthenticationKey);
                     }
+                    else if (data.Command == Command.GeneralGloCiphering)
+                    {
+                        p = new AesGcmParameter(settings.SourceSystemTitle,
+                                cipher.BlockCipherKey,
+                                cipher.AuthenticationKey);
+                    }
+                    else if (IsGloMessage(data.Command))
+                    {
+                        p = new AesGcmParameter(settings.SourceSystemTitle,
+                                cipher.BlockCipherKey,
+                                cipher.AuthenticationKey);
+                    }
                     else
                     {
-                        //If pre-set connection is made.
-                        if (settings.PreEstablishedSystemTitle == null)
-                        {
-                            p = new AesGcmParameter(settings.SourceSystemTitle, cipher.BlockCipherKey, cipher.AuthenticationKey);
-                        }
-                        else
-                        {
-                            p = new AesGcmParameter(settings.PreEstablishedSystemTitle,
-                                    cipher.BlockCipherKey,
-                                    cipher.AuthenticationKey);
-                        }
+                        p = new AesGcmParameter(settings.SourceSystemTitle,
+                                cipher.DedicatedKey,
+                                cipher.AuthenticationKey);
                     }
-
                     byte[] tmp = GXCiphering.Decrypt(p, data.Data);
+                    cipher.SecuritySuite = p.SecuritySuite;
+                    cipher.Security = p.Security;
                     if (client != null && client.pdu != null && data.IsComplete && (data.MoreData & RequestTypes.Frame) == 0)
                     {
                         client.pdu(client, tmp);
@@ -3102,6 +3114,7 @@ namespace Gurux.DLMS
                     data.Data.Clear();
                     data.Data.Set(tmp);
                     // Get command.
+                    data.CipheredCommand = data.Command;
                     data.Command = (Command)data.Data.GetUInt8();
                 }
                 else
@@ -3164,6 +3177,7 @@ namespace Gurux.DLMS
                         client.pdu(client, tmp);
                     }
                     data.Data.Set(tmp);
+                    data.CipheredCommand = data.Command;
                     data.Command = Command.None;
                     GetPdu(settings, data, client);
                     data.CipherIndex = data.Data.Size;
@@ -3256,6 +3270,9 @@ namespace Gurux.DLMS
                     case Command.GloGetRequest:
                     case Command.GloSetRequest:
                     case Command.GloMethodRequest:
+                    case Command.DedGetRequest:
+                    case Command.DedSetRequest:
+                    case Command.DedMethodRequest:
                         HandledGloDedRequest(settings, data, client);
                         // Server handles this.
                         break;
@@ -3265,14 +3282,6 @@ namespace Gurux.DLMS
                     case Command.GloSetResponse:
                     case Command.GloMethodResponse:
                     case Command.GloEventNotificationRequest:
-                        HandledGloDedResponse(settings, data, index, client);
-                        break;
-                    case Command.DedGetRequest:
-                    case Command.DedSetRequest:
-                    case Command.DedMethodRequest:
-                        HandledGloDedRequest(settings, data, client);
-                        // Server handles this.
-                        break;
                     case Command.DedGetResponse:
                     case Command.DedSetResponse:
                     case Command.DedMethodResponse:
@@ -3378,6 +3387,8 @@ namespace Gurux.DLMS
                         case Command.DedGetResponse:
                         case Command.DedSetResponse:
                         case Command.DedMethodResponse:
+                        case Command.GeneralGloCiphering:
+                        case Command.GeneralDedCiphering:
                             data.Command = Command.None;
                             data.Data.Position = data.CipherIndex;
                             GetPdu(settings, data, client);
@@ -3790,30 +3801,6 @@ namespace Gurux.DLMS
             count = value = 0;
             switch (objectType)
             {
-                case ObjectType.Data:
-                case ObjectType.ActionSchedule:
-                case ObjectType.None:
-                case ObjectType.AutoAnswer:
-                case ObjectType.AutoConnect:
-                case ObjectType.MacAddressSetup:
-                case ObjectType.GprsSetup:
-                case ObjectType.IecHdlcSetup:
-                case ObjectType.IecLocalPortSetup:
-                case ObjectType.IecTwistedPairSetup:
-                case ObjectType.ModemConfiguration:
-                case ObjectType.PppSetup:
-                case ObjectType.RegisterMonitor:
-                case ObjectType.SapAssignment:
-                case ObjectType.ZigBeeSasStartup:
-                case ObjectType.ZigBeeSasJoin:
-                case ObjectType.ZigBeeSasApsFragmentation:
-                case ObjectType.Schedule:
-                case ObjectType.StatusMapping:
-                case ObjectType.TcpUdpSetup:
-                case ObjectType.UtilityTables:
-                    value = 0;
-                    count = 0;
-                    break;
                 case ObjectType.ImageTransfer:
                     value = 0x40;
                     count = 4;
@@ -3885,6 +3872,10 @@ namespace Gurux.DLMS
                 case ObjectType.PushSetup:
                     value = 0x38;
                     count = 1;
+                    break;
+                default:
+                    value = 0;
+                    count = 0;
                     break;
             }
         }

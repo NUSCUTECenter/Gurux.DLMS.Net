@@ -123,6 +123,20 @@ namespace Gurux.DLMS.Secure
             {
                 GXByteBuffer tmp2 = new GXByteBuffer((ushort)(10 + data.Size));
                 tmp2.SetUInt8(param.Tag);
+                if (param.Tag == (int)Command.GeneralGloCiphering ||
+                    param.Tag == (int)Command.GeneralDedCiphering ||
+                    param.Tag == (int)Command.DataNotification)
+                {
+                    if (!param.IgnoreSystemTitle)
+                    {
+                        GXCommon.SetObjectCount(param.SystemTitle.Length, tmp2);
+                        tmp2.Set(param.SystemTitle);
+                    }
+                    else
+                    {
+                        tmp2.SetUInt8(0);
+                    }
+                }
                 GXCommon.SetObjectCount(data.Size, tmp2);
                 tmp2.Set(data.Array());
                 return tmp2.Array();
@@ -173,6 +187,7 @@ namespace Gurux.DLMS.Secure
             switch (cmd)
             {
                 case Command.GeneralGloCiphering:
+                case Command.GeneralDedCiphering:
                     len = GXCommon.GetObjectCount(data);
                     if (len != 0)
                     {
@@ -194,6 +209,8 @@ namespace Gurux.DLMS.Secure
                 case Command.GloMethodRequest:
                 case Command.GloMethodResponse:
                 case Command.GloEventNotificationRequest:
+                case Command.DedInitiateRequest:
+                case Command.DedInitiateResponse:
                 case Command.DedGetRequest:
                 case Command.DedGetResponse:
                 case Command.DedSetRequest:
@@ -201,6 +218,10 @@ namespace Gurux.DLMS.Secure
                 case Command.DedMethodRequest:
                 case Command.DedMethodResponse:
                 case Command.DedEventNotificationRequest:
+                case Command.DedReadRequest:
+                case Command.DedReadResponse:
+                case Command.DedWriteRequest:
+                case Command.DedWriteResponse:
                     break;
                 default:
                     throw new ArgumentOutOfRangeException("cryptedData");

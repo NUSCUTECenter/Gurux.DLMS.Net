@@ -228,7 +228,7 @@ namespace Gurux.DLMS
         /// Force that data is always sent as blocks.
         /// </summary>
         /// <remarks>
-        /// Some meters can handle only blocks. This property is used to force send all data in blocks. 
+        /// Some meters can handle only blocks. This property is used to force send all data in blocks.
         /// </remarks>
         public bool ForceToBlocks
         {
@@ -259,7 +259,7 @@ namespace Gurux.DLMS
         }
 
         /// <summary>
-        /// User id is the identifier of the user. 
+        /// User id is the identifier of the user.
         /// </summary>
         /// <remarks>
         /// This value is used if user list on Association LN is used.
@@ -736,7 +736,7 @@ namespace Gurux.DLMS
             byte[][] reply;
             if (UseLogicalNameReferencing)
             {
-                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.Aarq, 0, buff, null, 0xff);
+                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.Aarq, 0, buff, null, 0xff, Command.None);
                 reply = GXDLMS.GetLnMessages(p);
             }
             else
@@ -798,14 +798,8 @@ namespace Gurux.DLMS
         /// <seealso cref="ParseApplicationAssociationResponse"/>
         public bool IsAuthenticationRequired
         {
-            get
-            {
-                return Settings.IsAuthenticationRequired;
-            }
-            private set
-            {
-                Settings.IsAuthenticationRequired = value;
-            }
+            get;
+            private set;
         }
 
         /// <summary>
@@ -925,14 +919,14 @@ namespace Gurux.DLMS
             byte[][] reply;
             if (UseLogicalNameReferencing)
             {
-                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.ReleaseRequest, 0, buff, null, 0xff);
+                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.ReleaseRequest, 0, buff, null, 0xff, Command.None);
                 reply = GXDLMS.GetLnMessages(p);
             }
             else
             {
                 reply = GXDLMS.GetSnMessages(new GXDLMSSNParameters(Settings, Command.ReleaseRequest, 0xFF, 0xFF, null, buff));
             }
-            Settings.Connected &= ~ConnectionState.Dlms;            
+            Settings.Connected &= ~ConnectionState.Dlms;
             return reply;
         }
         /// <summary>
@@ -1206,7 +1200,7 @@ namespace Gurux.DLMS
             Settings.Objects = objects;
             Settings.Objects.Parent = this;
             return objects;
-        }       
+        }
 
         /// <summary>
         /// Returns collection of push objects.
@@ -1242,7 +1236,7 @@ namespace Gurux.DLMS
                                 classID, GXCommon.ToLogicalName((byte[])tmp[1])));
                         }
                     }
-                }               
+                }
             }
             return objects;
         }
@@ -1629,7 +1623,7 @@ namespace Gurux.DLMS
                 {
                     attributeDescriptor.SetUInt8(1);
                 }
-                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.MethodRequest, (byte)ActionRequestType.Normal, attributeDescriptor, data, 0xff);
+                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.MethodRequest, (byte)ActionRequestType.Normal, attributeDescriptor, data, 0xff, Command.None);
                 return GXDLMS.GetLnMessages(p);
             }
             else
@@ -1740,7 +1734,7 @@ namespace Gurux.DLMS
                 attributeDescriptor.SetUInt8((byte)index);
                 // Access selection is not used.
                 attributeDescriptor.SetUInt8(0);
-                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.SetRequest, (byte)SetRequestType.Normal, attributeDescriptor, data, 0xff);
+                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.SetRequest, (byte)SetRequestType.Normal, attributeDescriptor, data, 0xff, Command.None);
                 p.blockIndex = Settings.BlockIndex;
                 p.blockNumberAck = Settings.BlockNumberAck;
                 p.Streaming = false;
@@ -1804,7 +1798,7 @@ namespace Gurux.DLMS
                     // Access selection is used.
                     attributeDescriptor.SetUInt8(1);
                 }
-                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.GetRequest, (byte)GetCommandType.Normal, attributeDescriptor, data, 0xff);
+                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.GetRequest, (byte)GetCommandType.Normal, attributeDescriptor, data, 0xff, Command.None);
                 reply = GXDLMS.GetLnMessages(p);
             }
             else
@@ -1855,7 +1849,7 @@ namespace Gurux.DLMS
             GXByteBuffer data = new GXByteBuffer();
             if (this.UseLogicalNameReferencing)
             {
-                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.GetRequest, (byte)GetCommandType.WithList, null, data, 0xff);
+                GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.GetRequest, (byte)GetCommandType.WithList, null, data, 0xff, Command.None);
                 //Request service primitive shall always fit in a single APDU.
                 int pos = 0, count = (Settings.MaxPduSize - 12) / 10;
                 if (list.Count < count)
@@ -1965,9 +1959,66 @@ namespace Gurux.DLMS
         /// <param name="pg">Profile generic object to read.</param>
         /// <param name="index">One based start index.</param>
         /// <param name="count">Rows count to read.</param>
+        /// <param name="columns">Columns to read.</param>
         /// <returns>Read message as byte array.</returns>
         public byte[][] ReadRowsByEntry(GXDLMSProfileGeneric pg, int index, int count,
                                         List<GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>> columns)
+        {
+            int columnIndex = 1;
+            int columnEnd = 0;
+            int pos = 0;
+            // If columns are given find indexes.
+            if (columns != null && columns.Count != 0)
+            {
+                if (pg.CaptureObjects == null || pg.CaptureObjects.Count == 0)
+                {
+                    throw new Exception("Read capture objects first.");
+                }
+                columnIndex = pg.CaptureObjects.Count;
+                columnEnd = 1;
+                foreach (GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject> c in columns)
+                {
+                    pos = 0;
+                    bool found = false;
+                    foreach (GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject> it in pg.CaptureObjects)
+                    {
+                        ++pos;
+                        if (it.Key.ObjectType == c.Key.ObjectType
+                                && it.Key.LogicalName.CompareTo(c.Key.LogicalName) == 0
+                                && it.Value.AttributeIndex == c.Value.AttributeIndex
+                                && it.Value.DataIndex == c.Value.DataIndex)
+                        {
+                            found = true;
+                            if (pos < columnIndex)
+                            {
+                                columnIndex = pos;
+                            }
+                            columnEnd = pos;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        throw new Exception("Invalid column: " + c.Key.LogicalName);
+                    }
+                }
+            }
+            return ReadRowsByEntry(pg, index, count, columnIndex, columnEnd);
+        }
+
+        /// <summary>
+        /// Read rows by entry.
+        /// </summary>
+        /// <remarks>
+        /// Check Conformance because all meters do not support this.
+        /// </remarks>
+        /// <param name="pg">Profile generic object to read.</param>
+        /// <param name="index">One based start index.</param>
+        /// <param name="count">Rows count to read.</param>
+        /// <param name="columnStart">One based column start index.</param>
+        /// <param name="columnEnd">Column end index.</param>
+        /// <returns>Read message as byte array.</returns>
+        public byte[][] ReadRowsByEntry(GXDLMSProfileGeneric pg, int index, int count, int columnStart, int columnEnd)
         {
             if (index < 0)
             {
@@ -1976,6 +2027,14 @@ namespace Gurux.DLMS
             if (count < 0)
             {
                 throw new ArgumentOutOfRangeException("count");
+            }
+            if (columnStart < 1)
+            {
+                throw new ArgumentOutOfRangeException("columnStart");
+            }
+            if (columnEnd < 0)
+            {
+                throw new ArgumentOutOfRangeException("columnEnd");
             }
             pg.Reset();
             Settings.ResetBlockIndex();
@@ -1997,48 +2056,9 @@ namespace Gurux.DLMS
             {
                 GXCommon.SetData(Settings, buff, DataType.UInt32, index + count - 1);
             }
-            int columnIndex = 1;
-            int columnCount = 0;
-            int pos = 0;
-            // If columns are given find indexes.
-            if (columns != null && columns.Count != 0)
-            {
-                if (pg.CaptureObjects == null || pg.CaptureObjects.Count == 0)
-                {
-                    throw new Exception("Read capture objects first.");
-                }
-                columnIndex = pg.CaptureObjects.Count;
-                columnCount = 1;
-                foreach (GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject> c in columns)
-                {
-                    pos = 0;
-                    bool found = false;
-                    foreach (GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject> it in pg.CaptureObjects)
-                    {
-                        ++pos;
-                        if (it.Key.ObjectType == c.Key.ObjectType
-                                && it.Key.LogicalName.CompareTo(c.Key.LogicalName) == 0
-                                && it.Value.AttributeIndex == c.Value.AttributeIndex
-                                && it.Value.DataIndex == c.Value.DataIndex)
-                        {
-                            found = true;
-                            if (pos < columnIndex)
-                            {
-                                columnIndex = pos;
-                            }
-                            columnCount = pos - columnIndex + 1;
-                            break;
-                        }
-                    }
-                    if (!found)
-                    {
-                        throw new Exception("Invalid column: " + c.Key.LogicalName);
-                    }
-                }
-            }
             // Select columns to read.
-            GXCommon.SetData(Settings, buff, DataType.UInt16, columnIndex);
-            GXCommon.SetData(Settings, buff, DataType.UInt16, columnCount);
+            GXCommon.SetData(Settings, buff, DataType.UInt16, columnStart);
+            GXCommon.SetData(Settings, buff, DataType.UInt16, columnEnd);
             return Read(pg.Name, ObjectType.ProfileGeneric, 2, buff);
         }
 
@@ -2428,36 +2448,6 @@ namespace Gurux.DLMS
             return value;
         }
 
-
-        private static void GetItem(GXSerialNumberItem value)
-        {
-
-        }
-
-        class GXSerialNumberItem
-        {
-            public int Index
-            {
-                get;
-                set;
-            }
-            public string Formula
-            {
-                get;
-                set;
-            }
-            public string Tag
-            {
-                get;
-                set;
-            }
-            public string Value
-            {
-                get;
-                set;
-            }
-        }
-
         /// <summary>
         /// Converts meter serial number to server address.
         /// Default formula is used.
@@ -2540,7 +2530,7 @@ namespace Gurux.DLMS
                 }
             }
 
-            GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.AccessRequest, 0xFF, null, bb, 0xff);
+            GXDLMSLNParameters p = new GXDLMSLNParameters(this, Settings, 0, Command.AccessRequest, 0xFF, null, bb, 0xff, Command.None);
             p.time = new GXDateTime(time);
             return GXDLMS.GetLnMessages(p);
         }
@@ -2572,8 +2562,7 @@ namespace Gurux.DLMS
         /// </summary>
         /// <param name="reply">Reply.</param>
         /// <returns>Data notification data.</returns>
-        public object
-            ParseReport(GXReplyData reply, List<KeyValuePair<GXDLMSObject, int>> list)
+        public object ParseReport(GXReplyData reply, List<KeyValuePair<GXDLMSObject, int>> list)
         {
             if (reply.Command == Command.EventNotification)
             {
@@ -2632,6 +2621,18 @@ namespace Gurux.DLMS
                 return data.GetUInt16(data.Position + 6);
             }
             return 1;
+        }
+
+        /// <summary>
+        /// Get HDLC sender and receiver address information.
+        /// </summary>
+        /// <param name="reply">Received data.</param>
+        /// <param name="target">target (primary) address</param>
+        /// <param name="source">Source (secondary) address.</param>
+        /// <param name="type">DLMS frame type.</param>
+        public static void GetHdlcAddressInfo(GXByteBuffer reply, out int target, out int source, out byte type)
+        {
+            GXDLMS.GetHdlcAddressInfo(reply, out target, out source, out type);
         }
     }
 }

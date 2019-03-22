@@ -86,12 +86,12 @@ namespace Gurux.DLMS
         /// <summary>
         /// HDLC sender frame sequence number.
         /// </summary>
-        private byte SenderFrame;
+        internal byte SenderFrame;
 
         /// <summary>
         /// HDLC receiver frame sequence number.
         /// </summary>
-        private byte ReceiverFrame;
+        internal byte ReceiverFrame;
 
         /// <summary>
         /// Source system title.
@@ -129,11 +129,6 @@ namespace Gurux.DLMS
         /// </summary>
         internal string protocolVersion = null;
 
-        internal bool CanAccess()
-        {
-            return SourceSystemTitle != null;
-        }
-
         /// <summary>
         /// When connection is made client tells what kind of services it want's to use.
         /// </summary>
@@ -143,15 +138,6 @@ namespace Gurux.DLMS
         /// Server tells what functionality is available and client will know it.
         /// </summary>
         internal Conformance NegotiatedConformance = (Conformance)0;
-
-        /// <summary>
-        /// Is authentication Required.
-        /// </summary>
-        internal bool IsAuthenticationRequired
-        {
-            get;
-            set;
-        }
 
         /// <summary>
         /// Cipher interface.
@@ -166,16 +152,7 @@ namespace Gurux.DLMS
         }
 
         /// <summary>
-        /// Used security suite.
-        /// </summary>
-        internal SecuritySuite SecuritySuite
-        {
-            get;
-            set;
-        }
-
-        /// <summary>
-        /// User id is the identifier of the user. 
+        /// User id is the identifier of the user.
         /// </summary>
         /// <remarks>
         /// This value is used if user list on Association LN is used.
@@ -245,9 +222,13 @@ namespace Gurux.DLMS
             MaxServerPDUSize = MaxPduSize = DefaultMaxReceivePduSize;
             IsServer = server;
             Objects = new GXDLMSObjectCollection();
-            Limits = new GXDLMSLimits();
+            Limits = new GXDLMSLimits(this);
             Gateway = null;
             ProposedConformance = GXDLMSClient.GetInitialConformance(false);
+            if (server)
+            {
+                ProposedConformance |= Conformance.GeneralProtection;
+            }
             ResetFrameSequence();
             WindowSize = 1;
             UserId = -1;
@@ -288,7 +269,6 @@ namespace Gurux.DLMS
             target.MaxServerPDUSize = MaxServerPDUSize;
             target.ProposedConformance = ProposedConformance;
             target.NegotiatedConformance = NegotiatedConformance;
-            target.SecuritySuite = SecuritySuite;
             if (Cipher != null && target.Cipher != null)
             {
                 ((GXCiphering)Cipher).CopyTo((GXCiphering)target.Cipher);
@@ -400,7 +380,7 @@ namespace Gurux.DLMS
             }
             else
             {
-                SenderFrame = 0x10;
+                SenderFrame = 0xFE;
                 ReceiverFrame = 0xE;
             }
         }
@@ -516,7 +496,7 @@ namespace Gurux.DLMS
 
 
         ///<summary>
-        /// Block number acknowledged in GBT. 
+        /// Block number acknowledged in GBT.
         ///</summary>
         public UInt16 BlockNumberAck
         {
@@ -665,6 +645,10 @@ namespace Gurux.DLMS
                 {
                     useLogicalNameReferencing = value;
                     ProposedConformance = GXDLMSClient.GetInitialConformance(value);
+                    if (IsServer)
+                    {
+                        ProposedConformance |= Conformance.GeneralProtection;
+                    }
                 }
             }
         }

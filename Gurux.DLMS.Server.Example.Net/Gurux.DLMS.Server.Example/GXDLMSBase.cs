@@ -175,7 +175,7 @@ namespace GuruxDLMSServerExample
             clock.Deviation = 60;
             Items.Add(clock);
             ///////////////////////////////////////////////////////////////////////
-            //Add Load profile.           
+            //Add Load profile.
             GXDLMSProfileGeneric pg = new GXDLMSProfileGeneric("1.0.99.1.0.255");
             //Set capture period to 60 second.
             pg.CapturePeriod = 60;
@@ -194,7 +194,7 @@ namespace GuruxDLMSServerExample
             lock (FileLock)
             {
                 //Create 10 000 rows for profile generic file.
-                //In example profile generic we have two columns. 
+                //In example profile generic we have two columns.
                 //Date time and integer value.
                 int rowCount = 10000;
                 DateTime dt = DateTime.Now;
@@ -222,9 +222,9 @@ namespace GuruxDLMSServerExample
             ac.Mode = AutoConnectMode.AutoDiallingAllowedAnytime;
             ac.Repetitions = 10;
             ac.RepetitionDelay = 60;
-            //Calling is allowed between 1am to 6am.
-            ac.CallingWindow.Add(new KeyValuePair<GXDateTime, GXDateTime>(new GXDateTime(-1, -1, -1, 1, 0, 0, -1), new GXDateTime(-1, -1, -1, 6, 0, 0, -1)));
-            ac.Destinations = new string[] { "www.gurux.org" };
+            //Calling is allowed between 1am to 1pm.
+            ac.CallingWindow.Add(new KeyValuePair<GXDateTime, GXDateTime>(new GXDateTime(-1, -1, -1, -1, -1, 0, -1), new GXDateTime(-1, -1, -1, -1, -1, 0, -1)));
+            ac.Destinations = new string[] { "localhost:4059" };
             Items.Add(ac);
             ///////////////////////////////////////////////////////////////////////
             //Add Activity Calendar object.
@@ -395,6 +395,7 @@ namespace GuruxDLMSServerExample
             Items.Add(new GXDLMSCredit());
             Items.Add(new GXDLMSCharge());
             Items.Add(new GXDLMSTokenGateway());
+            Items.Add(new GXDLMSCompactData());
 
             ///////////////////////////////////////////////////////////////////////
             //Server must initialize after all objects are added.
@@ -851,7 +852,7 @@ namespace GuruxDLMSServerExample
                 if (it.Target is GXDLMSImageTransfer)
                 {
                     GXDLMSImageTransfer i = it.Target as GXDLMSImageTransfer;
-                    //Image name and size to transfer 
+                    //Image name and size to transfer
                     if (it.Index == 1)
                     {
                         i.ImageTransferStatus = ImageTransferStatus.NotInitiated;
@@ -1268,6 +1269,18 @@ namespace GuruxDLMSServerExample
                 {
                     Console.WriteLine(ex.Message);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Execute selected actions
+        /// </summary>
+        /// <param name="actions">List of actions to execute.</param>
+        protected override void Execute(List<KeyValuePair<GXDLMSObject, int>> actions)
+        {
+            foreach (var it in actions)
+            {
+                Console.WriteLine(DateTime.Now + " Executing: " + it.Key.ObjectType + " " + it.Key);
             }
         }
 

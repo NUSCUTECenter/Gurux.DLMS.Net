@@ -312,7 +312,20 @@ namespace Gurux.DLMS
         /// <param name="source">Source (secondary) address.</param>
         public static void GetHdlcAddressInfo(GXByteBuffer reply, out int target, out int source)
         {
-            GXDLMS.GetHdlcAddressInfo(reply, out target, out source);
+            byte type;
+            GXDLMS.GetHdlcAddressInfo(reply, out target, out source, out type);
+        }
+
+        /// <summary>
+        /// Get HDLC sender and receiver address information.
+        /// </summary>
+        /// <param name="reply">Received data.</param>
+        /// <param name="target">target (primary) address</param>
+        /// <param name="source">Source (secondary) address.</param>
+        /// <param name="type">DLMS frame type.</param>
+        public static void GetHdlcAddressInfo(GXByteBuffer reply, out int target, out int source, out byte type)
+        {
+            GXDLMS.GetHdlcAddressInfo(reply, out target, out source, out type);
         }
 
         /// <summary>
@@ -1064,22 +1077,22 @@ namespace Gurux.DLMS
                     GXAPDU.ParsePDU(settings, settings.Cipher, value, xml);
                     break;
                 case (byte)Command.GetRequest:
-                    GXDLMSLNCommandHandler.HandleGetRequest(settings, null, value, null, xml);
+                    GXDLMSLNCommandHandler.HandleGetRequest(settings, null, value, null, xml, Command.None);
                     break;
                 case (byte)Command.SetRequest:
-                    GXDLMSLNCommandHandler.HandleSetRequest(settings, null, value, null, xml);
+                    GXDLMSLNCommandHandler.HandleSetRequest(settings, null, value, null, xml, Command.None);
                     break;
                 case (byte)Command.ReadRequest:
-                    GXDLMSSNCommandHandler.HandleReadRequest(settings, null, value, null, xml);
+                    GXDLMSSNCommandHandler.HandleReadRequest(settings, null, value, null, xml, Command.None);
                     break;
                 case (byte)Command.MethodRequest:
-                    GXDLMSLNCommandHandler.HandleMethodRequest(settings, null, value, null, null, xml);
+                    GXDLMSLNCommandHandler.HandleMethodRequest(settings, null, value, null, null, xml, Command.None);
                     break;
                 case (byte)Command.WriteRequest:
-                    GXDLMSSNCommandHandler.HandleWriteRequest(settings, null, value, null, xml);
+                    GXDLMSSNCommandHandler.HandleWriteRequest(settings, null, value, null, xml, Command.None);
                     break;
                 case (byte)Command.AccessRequest:
-                    GXDLMSLNCommandHandler.HandleAccessRequest(settings, null, value, null, xml);
+                    GXDLMSLNCommandHandler.HandleAccessRequest(settings, null, value, null, xml, Command.None);
                     break;
                 case (byte)Command.DataNotification:
                     data.Xml = xml;
@@ -1186,6 +1199,8 @@ namespace Gurux.DLMS
                 case (byte)Command.GloMethodResponse:
                 case (byte)Command.DedGetRequest:
                 case (byte)Command.DedSetRequest:
+                case (byte)Command.DedReadResponse:
+                case (byte)Command.DedWriteResponse:
                 case (byte)Command.DedGetResponse:
                 case (byte)Command.DedSetResponse:
                 case (byte)Command.DedMethodRequest:
@@ -1211,7 +1226,11 @@ namespace Gurux.DLMS
                             if (st != null)
                             {
                                 AesGcmParameter p;
-                                if (settings.Cipher.DedicatedKey != null && settings.Cipher.DedicatedKey.Length != 0 && (c == Command.DedGetRequest || c == Command.DedSetRequest || c == Command.DedMethodRequest))
+                                if ((cmd == (byte)Command.DedGetRequest || cmd == (byte)Command.DedSetRequest ||
+                                    cmd == (byte)Command.DedReadResponse || cmd == (byte)Command.DedWriteResponse ||
+                                    cmd == (byte)Command.DedGetResponse || cmd == (byte)Command.DedSetResponse ||
+                                    cmd == (byte)Command.DedMethodRequest || cmd == (byte)Command.DedMethodResponse) &&
+                                    settings.Cipher.DedicatedKey != null && settings.Cipher.DedicatedKey.Length != 0)
                                 {
                                     p = new AesGcmParameter(st, settings.Cipher.DedicatedKey, settings.Cipher.AuthenticationKey);
                                 }
@@ -1245,6 +1264,7 @@ namespace Gurux.DLMS
                     xml.AppendLine(cmd, "Value", GXCommon.ToHex(value.Data, false, value.Position, value.Size - value.Position));
                     break;
                 case (byte)Command.GeneralGloCiphering:
+                case (byte)Command.GeneralDedCiphering:
                     if (settings.Cipher != null && Comments)
                     {
                         int len2 = xml.GetXmlLength();
@@ -1294,7 +1314,7 @@ namespace Gurux.DLMS
                     len = GXCommon.GetObjectCount(value);
                     tmp = new byte[len];
                     value.Get(tmp);
-                    xml.AppendStartTag(Command.GeneralGloCiphering);
+                    xml.AppendStartTag((Command) cmd);
                     xml.AppendLine(TranslatorTags.SystemTitle, null,
                             GXCommon.ToHex(tmp, false, 0, len));
                     len = GXCommon.GetObjectCount(value);
@@ -1302,7 +1322,7 @@ namespace Gurux.DLMS
                     value.Get(tmp);
                     xml.AppendLine(TranslatorTags.CipheredService, null,
                             GXCommon.ToHex(tmp, false, 0, len));
-                    xml.AppendEndTag(Command.GeneralGloCiphering);
+                    xml.AppendEndTag(cmd);
                     break;
                 case (byte)Command.ConfirmedServiceError:
                     data.Xml = xml;
@@ -1418,6 +1438,7 @@ namespace Gurux.DLMS
                 case (byte)Command.DedGetRequest:
                 case (byte)Command.DedSetRequest:
                 case (byte)Command.DedMethodRequest:
+                case (byte)Command.DedInitiateRequest:
                     s.settings.IsServer = false;
                     tmp = GXCommon.HexToBytes(GetValue(node, s));
                     s.settings.Cipher.Security = (Enums.Security)tmp[0];
@@ -1446,6 +1467,7 @@ namespace Gurux.DLMS
                 case (byte)Command.GloReadResponse:
                 case (byte)Command.GloWriteResponse:
                 case (byte)Command.GloEventNotificationRequest:
+                case (byte)Command.DedInitiateResponse:
                 case (byte)Command.DedGetResponse:
                 case (byte)Command.DedSetResponse:
                 case (byte)Command.DedMethodResponse:
@@ -2819,7 +2841,7 @@ namespace Gurux.DLMS
                 case Command.MethodRequest:
                 case Command.MethodResponse:
                     ln = new GXDLMSLNParameters(null, s.settings, 0, s.command, s.requestType,
-                                                s.attributeDescriptor, s.data, 0xff);
+                                                s.attributeDescriptor, s.data, 0xff, Command.None);
                     GXDLMS.GetLNPdu(ln, bb);
                     break;
                 case Command.GloGetRequest:
@@ -2921,22 +2943,22 @@ namespace Gurux.DLMS
                     break;
                 case Command.GeneralBlockTransfer:
                     ln = new GXDLMSLNParameters(null, s.settings, 0, s.command, s.requestType,
-                                                 s.attributeDescriptor, s.data, 0xff);
+                                                 s.attributeDescriptor, s.data, 0xff, Command.None);
                     GXDLMS.GetLNPdu(ln, bb);
                     break;
                 case Command.AccessRequest:
                     ln = new GXDLMSLNParameters(null, s.settings, 0, s.command, s.requestType,
-                                                s.attributeDescriptor, s.data, 0xff);
+                                                s.attributeDescriptor, s.data, 0xff, Command.None);
                     GXDLMS.GetLNPdu(ln, bb);
                     break;
                 case Command.AccessResponse:
                     ln = new GXDLMSLNParameters(null, s.settings, 0, s.command, s.requestType,
-                                                s.attributeDescriptor, s.data, 0xff);
+                                                s.attributeDescriptor, s.data, 0xff, Command.None);
                     GXDLMS.GetLNPdu(ln, bb);
                     break;
                 case Command.DataNotification:
                     ln = new GXDLMSLNParameters(null, s.settings, 0, s.command, s.requestType,
-                                                s.attributeDescriptor, s.data, 0xff);
+                                                s.attributeDescriptor, s.data, 0xff, Command.None);
                     ln.time = s.time;
                     GXDLMS.GetLNPdu(ln, bb);
                     break;
@@ -2948,7 +2970,7 @@ namespace Gurux.DLMS
                     break;
                 case Command.EventNotification:
                     ln = new GXDLMSLNParameters(null, s.settings, 0, s.command, s.requestType,
-                                                s.attributeDescriptor, s.data, 0xff);
+                                                s.attributeDescriptor, s.data, 0xff, Command.None);
                     ln.time = s.time;
                     GXDLMS.GetLNPdu(ln, bb);
                     break;
@@ -3130,7 +3152,7 @@ namespace Gurux.DLMS
                     else if (dt == DataType.BitString)
                     {
                         values.Add(new GXBitString(node.Attributes["Value"].Value));
-                    }                    
+                    }
                     else
                     {
                         values.Add(Convert.ChangeType(node.Attributes["Value"].Value, GXCommon.GetDataType(dt)));

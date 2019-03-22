@@ -79,9 +79,9 @@ namespace Gurux.DLMS
             return code;
         }
 
-        public GXStandardObisCode[] Find(string obisCode, ObjectType objectType)
-        {         
-            return Find(GetBytes(obisCode), (int)objectType);
+        public GXStandardObisCode[] Find(string obisCode, ObjectType objectType, Standard standard)
+        {
+            return Find(GetBytes(obisCode), (int)objectType, standard);
         }
 
         /// <summary>
@@ -271,9 +271,9 @@ namespace Gurux.DLMS
                 case 14:
                     return "Supply frequency";
                 case 15:
-                    return "Sum LI Active power (abs(QI+QIV)+abs(QII+QIII))";
+                    return "Sum Li Active power (abs(QI+QIV)+abs(QII+QIII))";
                 case 16:
-                    return "Sum LI Active power        (abs(QI+QIV)-abs(QII+QIII))";
+                    return "Sum Li Active power        (abs(QI+QIV)-abs(QII+QIII))";
                 case 17:
                     return "Sum Li Active power QI";
                 case 18:
@@ -444,7 +444,7 @@ namespace Gurux.DLMS
         /// <summary>
         /// Find Standard OBIS Code description.
         /// </summary>
-        public GXStandardObisCode[] Find(byte[] obisCode, int IC)
+        public GXStandardObisCode[] Find(byte[] obisCode, int IC, Standard standard)
         {
             GXStandardObisCode tmp;
             List<GXStandardObisCode> list = new List<GXStandardObisCode>();

@@ -542,6 +542,9 @@ namespace Gurux.DLMS.Reader
                     WriteTrace("<- " + DateTime.Now.ToLongTimeString() + "\t" + GXCommon.ToHex(data, true));
                     Media.Send(data, null);
                     succeeded = Media.Receive(p);
+                    // Short delay seems to fix weird bug when connected to multiple meters and piping console output to text file.
+                    // Without this, it doesn't seem to receive the reply correctly and it incurs 15s (5000ms WaitTime X 3 times)
+                    Thread.Sleep(10);
                     if (!succeeded)
                     {
                         //If Eop is not set read one byte at time.

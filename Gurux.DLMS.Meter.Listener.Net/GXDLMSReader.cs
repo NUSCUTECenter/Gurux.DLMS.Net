@@ -792,42 +792,6 @@ namespace Gurux.DLMS.Reader
         }
 
         /// <summary>
-        /// Close connection to the meter.
-        /// </summary>
-        /// <param name="forceDisconnectRequest">Whether or not to force the client disconnect request</param>
-        public void Close(bool forceDisconnectRequest)
-        {
-            if (Media != null && Client != null)
-            {
-                try
-                {
-                    if (Trace > TraceLevel.Info)
-                    {
-                        Console.WriteLine("Disconnecting from the meter.");
-                    }
-                    GXReplyData reply = new GXReplyData();
-                    try
-                    {
-                        ReadDataBlock(Client.ReleaseRequest(), reply);
-                    }
-                    catch (Exception)
-                    {
-                        //All meters don't support release.
-                    }
-                    reply.Clear();
-                    ReadDLMSPacket(Client.DisconnectRequest(forceDisconnectRequest), reply);
-                    Media.Close();
-                }
-                catch
-                {
-
-                }
-                Media = null;
-                Client = null;
-            }
-        }
-
-        /// <summary>
         /// Write trace.
         /// </summary>
         /// <param name="line"></param>

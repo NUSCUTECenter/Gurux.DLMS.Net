@@ -50,6 +50,7 @@ namespace Gurux.DLMS.Reader
     public class GXDLMSReader
     {
         int WaitTime = 5000;
+        int ShortDisconnectWaitTime = 100;
         IGXMedia Media;
         internal TraceLevel Trace;
         internal GXDLMSClient Client;
@@ -514,7 +515,7 @@ namespace Gurux.DLMS.Reader
         /// </summary>
         /// <param name="data">Data to send.</param>
         /// <returns>Received data.</returns>
-        public void ReadDLMSPacket(byte[] data, GXReplyData reply)
+        public void ReadDLMSPacket(byte[] data, GXReplyData reply, bool isDisconnectRequest = false)
         {
             if (data == null)
             {
@@ -533,7 +534,8 @@ namespace Gurux.DLMS.Reader
             {
                 Eop = eop,
                 Count = 5,
-                WaitTime = WaitTime,
+                // If it is a disconnect request, use a shorter wait time
+                WaitTime = isDisconnectRequest ? ShortDisconnectWaitTime : WaitTime,
             };
             lock (Media.Synchronous)
             {
